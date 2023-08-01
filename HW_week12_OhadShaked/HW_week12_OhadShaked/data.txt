@@ -1,0 +1,575 @@
+from penguin_game import *
+
+def accelerator(game, iceberg, destination, penguin_amount):
+    acceleration_value = game.acceleration_cost
+    if acceleration_value > 0:
+        penguin_amount += acceleration_value
+    if game.get_my_icepital_icebergs()[0].penguin_amount > 20:
+        iceberg.send_penguins(destination, penguin_amount)
+        try:
+            game.get_my_penguin_groups()[0].accelerate()
+        except:
+            print("no pings")
+
+def find_parent(node, parent_dict):
+    if not isinstance(parent_dict[node], int):
+        if parent_dict[node].id == node.id:
+            return node
+        parent_dict[node] = find_parent(parent_dict[node], parent_dict)
+        return parent_dict[node]
+		
+def union(node1, node2, parent_dict, size_dict):
+    parent1 = find_parent(node1, parent_dict)
+    parent2 = find_parent(node2, parent_dict)
+    if parent1.id == parent2.id:
+        return
+
+    if size_dict[parent2] > size_dict[parent1]:
+        parent1, parent2 = parent2, parent1
+
+    parent_dict[parent2] = parent1
+    size_dict[parent1] += size_dict[parent2]
+    
+def minimum_spanning_tree(graph):
+    size_dict = {}
+    parent_dict = {}
+    node_set = set()
+    edge_list = []
+
+    for node1 in graph:
+        for node2 in graph[node1]:
+            edge_list.append((graph[node1][node2], node1, node2))
+            node_set.add(node1)
+            node_set.add(node2)
+
+    edge_list.sort()
+    mst = []
+
+    for node in node_set:
+        parent_dict[node] = node
+        size_dict[node] = 1
+
+    for weight, node1, node2 in edge_list:
+        parent1 = find_parent(node1, parent_dict)
+        parent2 = find_parent(node2, parent_dict)
+        if parent1 and parent2 and parent1.id != parent2.id:
+            mst.append((node1, node2))
+            union(node1, node2, parent_dict, size_dict)
+
+    return mst
+
+def count_neighbors_in_mst(G, vertex):
+    """Return the number of neighboring vertices in the Minimum Spanning Tree (MST) of graph G that contains vertex."""
+    return sum(1 for u in G if vertex in u and len(u) == 2)
+
+def penguins_arriving_at_iceberg(game, iceberg, before_turn, player_id=None):
+    """Return the number of penguins arriving at iceberg before the specified turn from the specified player (if specified) or from all players."""
+    penguin_groups = game.get_all_penguin_groups()
+    total = 0
+    for group in penguin_groups:
+        if group.turns_till_arrival > before_turn:
+            continue
+        if player_id is None or group.owner.id == player_id:
+            total += group.penguin_amount
+        elif player_id != -1:
+            total -= group.penguin_amount
+    return total
+
+def penguins_arriving_at_iceberg_on_turn(game, iceberg, turn_number, player_id=None):
+    """Return the number of penguins arriving at iceberg on the specified turn from the specified player (if specified) or from all players."""
+    penguin_groups = game.get_all_penguin_groups()
+    total = 0
+    for group in penguin_groups:
+        if group.turns_till_arrival != turn_number:
+            continue
+        if player_id is None or group.owner.id == player_id:
+            total += group.penguin_amount
+        elif player_id != -1:
+            total -= group.penguin_amount
+    return total
+
+
+def TotalGrowth(game, iceberg, beforeTurn):
+    totalGrowth = 0
+    if iceberg in game.get_neutral_icebergs():
+        return 0
+    if iceberg in game.get_enemy_icebergs():
+        return -1 * iceberg.penguins_per_turn * beforeTurn
+    if iceberg in game.get_my_icebergs():
+        return iceberg.penguins_per_turn * beforeTurn
+    return totalGrowth
+
+
+def ClosestIcebergData(game, iceberg, idPlayer):
+    
+    icebergs = []
+    if idPlayer == -1:
+        icebergs = game.get_neutral_icebergs()
+    elif idPlayer == 0:
+        icebergs = game.get_my_icebergs()
+    elif idPlayer == 1:
+        icebergs = game.get_enemy_icebergs()
+        
+    closestDistance = 9999
+    closestIceberg = None
+    
+    for ice in icebergs:
+        ice_distance = iceberg.get_turns_till_arrival(ice)
+        if ice_distance < closestDistance:
+            closestDistance = ice_distance
+            closestIceberg = ice
+    return closestDistance, closestIceberg
+
+def ClosestIcebergWithSmallerFrontScore(game, iceberg, myIcebergsFrontScore, idPlayer):
+    
+    icebergs = []
+    if idPlayer == -1:
+        icebergs = game.get_neutral_icebergs()
+    elif idPlayer == 0:
+        icebergs = game.get_my_icebergs()
+    elif idPlayer == 1:
+        icebergs = game.get_enemy_icebergs()
+        
+    closestDistance = 9999
+    closestIcebergId = 0
+    
+    for ice in icebergs:
+        ice_distance = iceberg.get_turns_till_arrival(ice)
+        if ice != iceberg and ice_distance < closestDistance and myIcebergsFrontScore[ice.id] < myIcebergsFrontScore[iceberg.id]:
+            closestDistance = ice_distance
+            closestIcebergId = ice.id
+    return closestDistance, closestIcebergId
+
+
+# Return iceberg_id's closest icebergs
+def getClosestIceberg(game, iceberg, minDist, maxDist):
+	closestIcebergs = {}
+	icebergs = game.get_my_icebergs()
+	distance = 9999
+	for ice in icebergs:
+		if minDist <= iceberg.get_turns_till_arrival(ice) <= maxDist:
+			closestIcebergs[ice] = iceberg.get_turns_till_arrival(ice)
+		
+	return closestIcebergs
+
+
+# Return the first o ccurence of a code. Eg if given ""
+def getFirstOccurenceOfACode(predictions, code):
+	count = 0
+	for prediction in predictions:
+		if prediction[0] == code:
+			return count
+		count += 1
+	return count
+
+
+# Find vulnerable icebergs
+def isEnemyIcebergVulnerable(game, iceberg, myIcebergFreePenguins):
+	doWeAttack = False
+	myAttackIcebergs = {}
+	perimeter = 7 # 8 TO DO : moyennes des distances
+	
+	tot = iceberg.penguin_amount # Store the number of enemy ships - our coming ships
+	tot += penguins_arriving_at_iceberg(game, iceberg, perimeter,iceberg.owner.id)
+	tot += TotalGrowth(game, iceberg, perimeter)
+	
+	for ice in game.get_enemy_icebergs():
+		distance = ice.get_turns_till_arrival(iceberg)
+		if distance > perimeter:
+			continue
+		tot += ice.penguin_amount + TotalGrowth(game, ice, perimeter - distance)
+	
+	for ice in game.get_my_icebergs():
+		distance = ice.get_turns_till_arrival(iceberg)
+		if distance > perimeter:
+			continue
+		tot -= myIcebergFreePenguins[ice.id] + TotalGrowth(game, ice, perimeter - distance)
+		myAttackIcebergs[ice] = myIcebergFreePenguins[ice.id]
+		if tot < 0:
+			break
+	
+	doWeAttack = tot < 0
+	
+	return doWeAttack, myAttackIcebergs
+	
+	
+def do_turn(game):
+	## Game constants
+	NUMBER_OF_PREDICTED_TURNS = 20 # (We count the current turn)
+	# If we don't have any planet, wait next turn...
+	# Check if we are in first turn
+	## Compute non_nat_icebergMST
+	non_nat_graph = {}
+	newCode = -3
+	non_nat_icebergs = game.get_my_icebergs()
+	non_nat_icebergs += game.get_enemy_icebergs()
+	for u in non_nat_icebergs:
+		non_nat_graph[u] = {}
+		for v in non_nat_icebergs:
+			non_nat_graph[u][v] = u.get_turns_till_arrival(v)
+	non_nat_icebergMST = minimum_spanning_tree(non_nat_graph)
+	## Compute myIcebergsMST
+	myIcebergsGraph = {}
+	myIcebergs = game.get_my_icebergs()
+	for u in myIcebergs:
+		myIcebergsGraph[u.id] = {}
+		for v in myIcebergs:
+			myIcebergsGraph[u.id][v.id] = u.get_turns_till_arrival(v)
+	myIcebergsMST = minimum_spanning_tree(myIcebergsGraph)
+	## Compute enemyFrontIcebergs and myFrontPlanets.
+	# An enemy planet is on the front if in the MST there
+	# is an edge between this enemy planet and one of our planet
+	myFrontIcebergs = []
+	enemyFrontIcebergs = []
+	myIcebergs = game.get_my_icebergs()
+	enemyIcebergs = game.get_enemy_icebergs()
+	for u in non_nat_icebergMST:
+		if len(u) != 2:
+			continue
+		if u[0] in game.get_my_icebergs() and u[1] in game.get_enemy_icebergs():
+			myFrontIcebergs.append(u[0])
+			enemyFrontIcebergs.append(u[1])
+			continue
+	## Compute myIcebergsFrontScore: the smaller, the closer to the front.
+	myIcebergsFrontScore = {}
+	my_icebergs = game.get_my_icebergs()
+	for ice in my_icebergs:
+		myIcebergsFrontScore[ice.id], nothing = ClosestIcebergData(game, ice, 1)
+		
+	# Compute myIcebergsInFuture and myThreatenedIceberg
+	# Create a prediction of the future for my icebergs:
+	#	+3 means I get an enemy planet
+	#	+2	I get a neutral planetplanet,
+	#	+1 it's my planet,
+	#	0 neutral planet,
+	#	-1 enemy planet,
+	#	-2 enemy get a neutral planet
+	#	-3 enemy get my planet
+
+	my_icebergs = game.get_my_icebergs()
+	myIcebergsInFuture = {}
+	myThreatenedIceberg = []
+	for ice in my_icebergs:
+		predictions = []
+		penguins = ice.penguin_amount
+		own = ice.owner
+		for i in range(NUMBER_OF_PREDICTED_TURNS):
+			# Add new ships
+			penguins += penguins_arriving_at_iceberg_on_turn(game, ice, i, 1)				
+			# Check who owns now the planet
+			if own == 0: # We have the planet
+				if penguins >= 0:
+					newCode = 1
+				else:
+					newCode = -3
+					own = 1
+				
+					if (myThreatenedIceberg.count(ice) == 0) :
+						myThreatenedIceberg.append(ice)
+			elif own == 1: # The enemy has the planet
+				if penguins > 0:
+					newCode = 3
+					own = 0
+				else:
+					newCode = -1
+			predictions.append((newCode, penguins))
+			# Add new ships
+			if own == 0:			 
+				penguins += ice.penguins_per_turn
+			if own == 1:
+				penguins -= ice.penguins_per_turn
+		myIcebergsInFuture[ice.id] = predictions
+	# To avoid crash
+	if len(myThreatenedIceberg) == len(game.get_my_icebergs()):
+		game.crash()
+	# Compute neutralIcebergsInFuture, neutralThreatenedIcebergs and neutralWonIcebergs
+	# Create a prediction of the future for neutral icebergs:
+	#	+3 means I get an enemy planet
+	#	+2	I get a neutral planetplanet,
+	#	+1 it's my planet,
+	#	0 neutral planet,
+	#	-1 enemy planet,
+	#	-2 enemy get a neutral planet
+	#	-3 enemy get my planet
+	neutralIcebergs = game.get_neutral_icebergs()
+	neutralIcebergsInFuture = {}
+	neutralThreatenedIcebergs = []
+	neutralWonIcebergs = []
+	for ice in neutralIcebergs:
+		predictions = []
+		newCode = 0
+		penguins = ice.penguin_amount
+		own = ice.owner
+		for i in range(NUMBER_OF_PREDICTED_TURNS):
+			if own == -1: # The planet is still neutral
+				penguins -= penguins_arriving_at_iceberg_on_turn(game, ice, i, 0)
+				if penguins < 0:
+					if penguins_arriving_at_iceberg_on_turn(game, ice, i, 1) > 0:
+						penguins = abs(penguins) # Little math trick because since we get the planet, penguins should become positive again :-)
+						newCode = 2
+						own = 0
+						if (neutralWonIcebergs.count(ice) == 0):
+							neutralWonIcebergs.append(ice)
+					else:
+						newCode = -2
+						if (neutralThreatenedIcebergs.count(ice) == 0):
+							neutralThreatenedIcebergs.append(ice)
+						own = 1
+			else: # The planet is no more neutral
+				penguins += penguins_arriving_at_iceberg_on_turn(game, ice, i, 1)
+				if own == 0: # We have the planet
+					if penguins >= 0:
+						newCode = 1
+					else:
+						newCode = -3
+						own = 1
+				elif own == 1: # The enemy has the planet
+					if penguins >= 0:
+						newCode = 3
+						own = 0
+					else:
+						newCode = -1
+					
+			predictions.append((newCode, penguins))
+			# Add new ships
+			if own == 0:
+				penguins += ice.penguins_per_turn
+			if own == 1:
+				penguins -= ice.penguins_per_turn		
+		neutralIcebergsInFuture[ice.id] = predictions		
+	## Compute myIcebergsSparePenguins
+	myIcebergsSparePenguins = {}
+	my_icebergs = game.get_my_icebergs()
+	for ice in my_icebergs:
+		sparePenguins = 999999
+		future = myIcebergsInFuture[ice.id]
+		for stepInFuture in future:
+			if stepInFuture[1] < sparePenguins:
+				sparePenguins = stepInFuture[1]
+		myIcebergsSparePenguins[ice.id] = max(0, sparePenguins)
+	#print "myIcebergsSparePenguins:"
+	#print myIcebergsSparePenguins
+	## Defend myThreatenedIceberg
+	for ice in myThreatenedIceberg:
+		print "ice:"
+		print ice.id
+		if len(game.get_my_icebergs()) <= 1: # If we only have one planet, there is no front...
+			continue
+		timeRemaining = getFirstOccurenceOfACode(myIcebergsInFuture[ice.id], -3)
+		closestIcebergs = getClosestIceberg(game, ice, 1, 0, max(0, timeRemaining+1))
+		penguinsNeeded = penguins_arriving_at_iceberg(game, ice, NUMBER_OF_PREDICTED_TURNS, 2) - ice.penguin_amount
+		#print "closestIcebergs:"
+		#print closestIcebergs
+		for helper in closestIcebergs:
+			#if penguinsNeeded < 0:
+				#break
+			#print "helper:"
+			#print helper.id
+			#print penguinsNeeded			
+			#pen_amount = max(0, min(penguinsNeeded + 1, myIcebergsSparePenguins[helper.id], helper.penguin_amount - 1))
+			accelerator(game, helper, ice, myIcebergsSparePenguins[helper.id])					 
+			#myIcebergsSparePenguins[helper.id] -= pen_amount
+	#if len(myThreatenedIceberg) == len(game.get_my_icebergs()):
+		#game.crash()
+		
+	## Neutral planet: see if the enemy tries to get a planet closer to us. If yes, send a few ships
+	
+	#print neutralThreatenedIcebergs
+	for ice in neutralThreatenedIcebergs:
+		distance1, ice1 = ClosestIcebergData(game, ice, 0)
+		distance2, ice2 = ClosestIcebergData(game, ice, 1)
+		if distance1 <= distance2: # We are closer: try to get the neutral planet right after the enemy arrives if we have enough ships
+			#print "coucou"
+			firstOccurence = getFirstOccurenceOfACode(neutralIcebergsInFuture[ice.id], -2)
+			if ice1 in myThreatenedIceberg:
+				continue
+			#print ice.id
+			#print neutralIcebergsInFuture[ice.id]
+			#print firstOccurence
+            # Send ships if we have enough ships
+			pen_amount = ice.penguins_per_turn + 2 + (penguins_arriving_at_iceberg(game, ice, firstOccurence + 1, 0) - ice.penguin_amount)
+            #if ice1.penguin_amount > pen_amount and distance1 - 1 == firstOccurence: # Send ship just at the right time
+			for ice in game.get_my_icebergs():
+				if (iceberg in game.get_my_icepital_icebergs() and game.get_my_icepital_icebergs()[0].penguin_amount<15 and game.turn>50):
+					continue
+				if myIcebergsSparePenguins[ice.id]-1 > pen_amount:	
+					ice1.send_penguins(ice, pen_amount)
+            #Impact the decrease in ships on this planet on a few variables							 
+			myIcebergsSparePenguins[ice1.id] -= pen_amount
+    ## Target vulnerable enemy icebergs
+    #print len(enemyFrontIcebergs)
+	for ice in game.get_my_icebergs():
+		for iceberg in enemyFrontIcebergs:
+			print("hey")
+			if (iceberg in game.get_my_icepital_icebergs() and game.get_my_icepital_icebergs()[0].penguin_amount<15 and game.turn>50):
+				continue
+			if myIcebergsSparePenguins[ice.id]-1 > iceberg.penguin_amount:
+				accelerator(game, ice, iceberg, myIcebergsSparePenguins[ice.id])
+	## Target neutral icebergs
+	## Find my strongest planet.
+	IcebergsAlreadyTargeted = []
+	iteration = 5
+	
+	# Special case for first turn
+	if game.turn == 1:
+		my_icebergs = game.get_my_icebergs()
+		enemy_icebergs = game.get_enemy_icebergs()
+		if len(my_icebergs) > 0 and len(enemy_icebergs) > 0:
+			myPlanet = my_icebergs[0]
+			enemyPlanet = enemy_icebergs[0]
+			if myPlanet.get_turns_till_arrival(enemyPlanet) < 9:
+				iteration = 1
+	for i in range(iteration):
+	#while not done:
+		source = -1
+		source_score = -999999.0
+		my_icebergs = game.get_my_icebergs()
+		for ice in my_icebergs:
+			if ice in myThreatenedIceberg:
+				continue
+			score = float(ice.penguin_amount)
+			if score > source_score:
+				source_score = score
+				source = ice
+		
+		## Find the weakest neutral planet close to my strong planet.
+		dest = -1
+		dest_score = -999999.0
+		not_my_icebergs = game.get_neutral_icebergs()
+		
+		for ice in not_my_icebergs:
+			distance2, ice2 = ClosestIcebergData(game, ice, 1)
+			if (IcebergsAlreadyTargeted.count(ice.id) > 0) and game.turn == 1 and distance2 > 8:
+				continue
+			if ice in neutralWonIcebergs or ice in neutralThreatenedIcebergs: # We've already dealt with neutral planet that are won or lost
+				continue
+			if (penguins_arriving_at_iceberg(game, ice, 300, 0) > 20):
+				continue
+			#distance1, idPlanet1 = ClosestIcebergData(game, ice.id, 1)
+			distance1 = source.get_turns_till_arrival(ice)
+			distance2, ice2 = ClosestIcebergData(game, ice, 1)
+			if distance1 >= distance2: #Don't attack if ennemy is closer
+				continue
+			score = (1.0 + ice.penguins_per_turn) / (ice.penguin_amount + 3*source.get_turns_till_arrival(ice))
+			if score > dest_score:
+				dest_score = score
+				dest = ice
+		## Send ships from my strongest planet to the target neutral planet
+		if (dest_score > 0.01 and myIcebergsSparePenguins[source.id] > 1 and source.penguin_amount > 1 and not(source in myThreatenedIceberg)) :
+			IcebergsAlreadyTargeted.append(dest.id)
+			pen_amount = dest.penguin_amount + 1
+			#distance1 = game.Distance(source.id, dest.id)
+			#distance2, idPlanet2 = ClosestIcebergData(game, dest.id, 2)
+			#if firstTurn and float(distance1)/distance2 > 0.7 : # send a bit more ships if 1st turn + close to enemy
+				#pen_amount += int(max(0, float((distance1)/distance2 - 0.7))*20)
+				#pass
+			# only send ships if we can take in one attacks
+			if ( pen_amount > 0 and source.penguin_amount > pen_amount and myIcebergsSparePenguins[source.id] > pen_amount):
+				accelerator(game, source, dest, pen_amount)						 
+				myIcebergsSparePenguins[source.id] -= pen_amount
+		else:
+			break
+			
+			
+	## Fortify threaned icebergs
+	
+	## Fortify front icebergs (=icebergs that are the closest to at least one planet enemy)
+	
+	# Compute myBackIcebergs and frontIcebergs
+	myBackIcebergs = game.get_my_icebergs()
+	#frontIcebergs = list(myThreatenedIceberg)
+	frontIcebergs = list(myFrontIcebergs)	
+	
+	my_icebergs = game.get_my_icebergs()
+	enemyIcebergs = game.get_enemy_icebergs()
+	for ice in enemyIcebergs:
+		if len(game.get_my_icebergs()) <= 1: # If we only have ona planet, there is no front...
+			continue
+		distance = 99999.0
+		closestIceberg = None
+		for iice in my_icebergs:
+			if ice.get_turns_till_arrival(iice) < distance:
+				closestIceberg = iice
+				distance = ice.get_turns_till_arrival(iice)
+		if closestIceberg == None:
+			continue
+		#myAndEnemyPlanetsNeighbours.append([p, ice])
+		if frontIcebergs.count(closestIceberg) < 1:
+			frontIcebergs.append(closestIceberg)
+		if myBackIcebergs.count(closestIceberg) > 0:
+			myBackIcebergs.remove(closestIceberg)
+
+		#Remove from myBackIcebergs all myThreatenedIceberg
+		for iice in myThreatenedIceberg:
+			if myBackIcebergs.count(iice) > 0 :
+				myBackIcebergs.remove(iice)
+		# For each back planet I have, send ships to the closest front
+		#TO DO: replace code by using MST + frontscore
+		for iice in myBackIcebergs:
+			if iice in myThreatenedIceberg:
+				continue
+			distance = 99999
+			# Find closest planet
+			closestFrontIceberg = None
+			for iiice in frontIcebergs:
+				if iice.get_turns_till_arrival(iiice) < distance:
+					closestFrontIceberg = iiice
+					distance = iice.get_turns_till_arrival(iiice)
+					
+			# Send ships to the closest front		 
+			pen_amount = int(iice.penguin_amount/2)
+			pen_amount = min(pen_amount, myIcebergsSparePenguins[iice.id])
+			TOO_FAR = 10
+			if pen_amount > 0 and pen_amount < iice.penguin_amount and \
+				 iice.penguin_amount > (-1*penguins_arriving_at_iceberg(game, iice.id, 20, 0) - TotalGrowth(game, iice, 0)) and \
+				 not(closestFrontIceberg == None or iice == None):
+				if (1==1):#distance < TOO_FAR: # Don't send ships if it's too far!
+					iice.send_penguins(closestFrontIceberg, pen_amount)
+					myIcebergsSparePenguins[iice.id] -= pen_amount
+				else:
+					# We find our neighbor planet in the MST with smallest frontScore and send ships there
+					smallestFrontScore = 9999
+					smallestFrontScoreNeighborIceberg = None
+					neighborPlanet = None
+					for u in myIcebergsMST:
+						if len(u) != 2:
+							continue
+						if u[0] == iice:
+							neighborPlanet = u[1]
+						elif u[1] == iice:
+							neighborPlanet = u[0]
+						else:
+							continue
+						# To avoid risk of cycles in fortfications
+						if (count_neighbors_in_mst(myIcebergsMST, neighborPlanet) <= 1): 
+							#continue
+							pass
+						if smallestFrontScore > myIcebergsFrontScore[neighborPlanet.id]:
+							smallestFrontScore = myIcebergsFrontScore[neighborPlanet.id]
+							smallestFrontScoreNeighborIceberg = neighborPlanet
+					# To avoid risk of cycles in fortfications 
+					try:
+						if (count_neighbors_in_mst(myIcebergsMST, iice) <= 1) and myIcebergsFrontScore[neighborPlanet.id] > myIcebergsFrontScore[iice.id]:
+							dist, NeighborIceberg = ClosestIcebergWithSmallerFrontScore(game, iice, myIcebergsFrontScore, 0)
+							if dist == 9999:
+								continue
+							smallestFrontScoreNeighborIceberg = game.GetPlanet(NeighborIceberg)
+					except:
+						print("lol2")
+					closestNeutralIcebergDistance, sda = ClosestIcebergData(game, iice, 0)
+					#if smallestFrontScoreNeighborIceberg != None and (iice.penguin_amount > 80 or closestNeutralIcebergDistance > 10):		
+					iice.send_penguins(smallestFrontScoreNeighborIceberg, pen_amount)
+					#Impact the decrease in ships on this planet on a few variables							 
+					myIcebergsSparePenguins[iice.id] -= pen_amount
+	iceberg = game.get_my_icepital_icebergs()[0]
+	
+	for ice in game.get_my_icebergs():
+		if myIcebergsSparePenguins[ice.id]-1 > iceberg.penguin_amount*1.5 and iceberg.penguin_amount<penguins_arriving_at_iceberg(game, iceberg.id, 20, 0):
+			ice.send_penguins(iceberg, myIcebergsSparePenguins[ice.id])
+	try:
+		iceberg = game.get_enemy_icepital_icebergs()[0]
+		for ice in game.get_my_icebergs():
+			if myIcebergsSparePenguins[ice.id]-1 > iceberg.penguin_amount*2.5:
+				ice.send_penguins(iceberg, myIcebergsSparePenguins[ice.id])
+	except:
+		print("lol")
